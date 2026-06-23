@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	MapW = 40
-	MapH = 20
+	MapW        = 40
+	MapH        = 20
+	InvMax      = 3
+	SideBarW    = 24
 )
 
 type Tile int
@@ -30,7 +32,44 @@ const (
 	IGold
 	IPotion
 	IStairs
+	IChest
 )
+
+type EquipType int
+
+const (
+	EWeapon EquipType = iota
+	EArmor
+)
+
+type Equipment struct {
+	Name string
+	Type EquipType
+	Atk  int
+	Def  int
+}
+
+type Inventory []*Equipment
+
+func (inv Inventory) TotalAtk() int {
+	sum := 0
+	for _, e := range inv {
+		if e != nil {
+			sum += e.Atk
+		}
+	}
+	return sum
+}
+
+func (inv Inventory) TotalDef() int {
+	sum := 0
+	for _, e := range inv {
+		if e != nil {
+			sum += e.Def
+		}
+	}
+	return sum
+}
 
 type Monster struct {
 	X, Y  int
@@ -44,9 +83,23 @@ type Player struct {
 	X, Y int
 	HP   int
 	MaxHP int
-	ATK  int
-	DEF  int
-	Gold int
+	BaseATK int
+	BaseDEF int
+	Gold    int
+	Inv     Inventory
+}
+
+func (p *Player) ATK() int { return p.BaseATK + p.Inv.TotalAtk() }
+func (p *Player) DEF() int { return p.BaseDEF + p.Inv.TotalDef() }
+
+func (p *Player) AddEquip(e *Equipment) (removed *Equipment) {
+	if len(p.Inv) >= InvMax {
+		removed = p.Inv[0]
+		p.Inv = append(p.Inv[1:], e)
+	} else {
+		p.Inv = append(p.Inv, e)
+	}
+	return
 }
 
 type Room struct {
@@ -64,12 +117,29 @@ type Game struct {
 	MsgTime  time.Time
 }
 
+var weaponNames = []string{"短刀", "长剑", "战斧", "铁锤", "长矛", "匕首", "大剑", "弯刀"}
+var armorNames = []string{"布衣", "皮甲", "锁子甲", "铁甲", "板甲", "法袍", "藤甲", "战甲"}
+
+func randomEquipment(level int) *Equipment {
+	t := EquipType(rand.Intn(2))
+	if t == EWeapon {
+		name := weaponNames[rand.Intn(len(weaponNames))]
+		bonus := 1 + level/2 + rand.Intn(2)
+		return &Equipment{Name: name, Type: EWeapon, Atk: bonus}
+	} else {
+		name := armorNames[rand.Intn(len(armorNames))]
+		bonus := 1 + level/2 + rand.Intn(2)
+		return &Equipment{Name: name, Type: EArmor, Def: bonus}
+	}
+}
+
 func NewGame() *Game {
 	g := &Game{
 		Level: 1,
 		Player: Player{
 			HP: 20, MaxHP: 20,
-			ATK: 3, DEF: 1,
+			BaseATK: 3, BaseDEF: 1,
+			Inv: Inventory{},
 		},
 	}
 	g.GenerateLevel()
@@ -126,6 +196,14 @@ func (g *Game) GenerateLevel() {
 		x, y := pickFloor()
 		if x >= 0 {
 			g.Items[[2]int{x, y}] = IPotion
+		}
+	}
+
+	numChests := 1 + rand.Intn(2)
+	for i := 0; i < numChests; i++ {
+		x, y := pickFloor()
+		if x >= 0 {
+			g.Items[[2]int{x, y}] = IChest
 		}
 	}
 
@@ -262,8 +340,8 @@ func maxInt(a, b int) int {
 }
 
 func (g *Game) combat(m *Monster) {
-	pDmg := maxInt(1, g.Player.ATK-m.DEF)
-	mDmg := maxInt(1, m.ATK-g.Player.DEF)
+	pDmg := maxInt(1, g.Player.ATK()-m.DEF)
+	mDmg := maxInt(1, m.ATK-g.Player.DEF())
 
 	for m.HP > 0 && g.Player.HP > 0 {
 		m.HP -= pDmg
@@ -342,9 +420,9 @@ func (g *Game) Move(dx, dy int) {
 		delete(g.Items, key)
 		switch item {
 		case IGold:
-			g.Player.ATK++
+			g.Player.BaseATK++
 			g.Player.Gold++
-			g.SetMsg("拾取金币! 攻击力+1 (ATK:%d)", g.Player.ATK)
+			g.SetMsg("拾取金币! 攻击+1 (ATK:%d)", g.Player.ATK())
 		case IPotion:
 			heal := 5
 			if g.Player.HP+heal > g.Player.MaxHP {
@@ -352,6 +430,22 @@ func (g *Game) Move(dx, dy int) {
 			}
 			g.Player.HP += heal
 			g.SetMsg("饮用药水! 恢复%dHP (HP:%d/%d)", heal, g.Player.HP, g.Player.MaxHP)
+		case IChest:
+			eq := randomEquipment(g.Level)
+			removed := g.Player.AddEquip(eq)
+			if eq.Type == EWeapon {
+				if removed != nil {
+					g.SetMsg("宝箱开出[%s](ATK+%d) 替换[%s]", eq.Name, eq.Atk, removed.Name)
+				} else {
+					g.SetMsg("宝箱开出[%s](ATK+%d)", eq.Name, eq.Atk)
+				}
+			} else {
+				if removed != nil {
+					g.SetMsg("宝箱开出[%s](DEF+%d) 替换[%s]", eq.Name, eq.Def, removed.Name)
+				} else {
+					g.SetMsg("宝箱开出[%s](DEF+%d)", eq.Name, eq.Def)
+				}
+			}
 		case IStairs:
 			g.Level++
 			g.SetMsg("进入第%d层!", g.Level)
@@ -360,10 +454,17 @@ func (g *Game) Move(dx, dy int) {
 	}
 }
 
+func drawText(x, y int, s string, fg, bg termbox.Attribute) {
+	for i, ch := range s {
+		termbox.SetCell(x+i, y, ch, fg, bg)
+	}
+}
+
 func (g *Game) Render() {
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 
-	status := fmt.Sprintf(" 第%d层 | HP:%d/%d | ATK:%d | DEF:%d | 金币:%d ", g.Level, g.Player.HP, g.Player.MaxHP, g.Player.ATK, g.Player.DEF, g.Player.Gold)
+	status := fmt.Sprintf(" 第%d层 | HP:%d/%d | ATK:%d | DEF:%d | 金币:%d ",
+		g.Level, g.Player.HP, g.Player.MaxHP, g.Player.ATK(), g.Player.DEF(), g.Player.Gold)
 	for i, ch := range status {
 		termbox.SetCell(i, 0, ch, termbox.ColorWhite|termbox.AttrBold, termbox.ColorBlue)
 	}
@@ -394,6 +495,9 @@ func (g *Game) Render() {
 				case IPotion:
 					ch = '+'
 					fg = termbox.ColorGreen | termbox.AttrBold
+				case IChest:
+					ch = 'C'
+					fg = termbox.ColorMagenta | termbox.AttrBold
 				case IStairs:
 					ch = '>'
 					fg = termbox.ColorCyan | termbox.AttrBold
@@ -416,6 +520,29 @@ func (g *Game) Render() {
 		}
 	}
 
+	sideX := MapW + 1
+	drawText(sideX, 1, "══════════════", termbox.ColorBlue, termbox.ColorDefault)
+	drawText(sideX, 2, " 背  包 ", termbox.ColorCyan|termbox.AttrBold, termbox.ColorDefault)
+	drawText(sideX, 3, "══════════════", termbox.ColorBlue, termbox.ColorDefault)
+
+	for i := 0; i < InvMax; i++ {
+		row := 4 + i
+		line := fmt.Sprintf("[%d] ", i+1)
+		drawText(sideX, row, line, termbox.ColorDarkGray, termbox.ColorDefault)
+		if i < len(g.Player.Inv) {
+			e := g.Player.Inv[i]
+			if e.Type == EWeapon {
+				drawText(sideX+4, row, fmt.Sprintf("%s", e.Name), termbox.ColorYellow, termbox.ColorDefault)
+				drawText(sideX+4+len([]rune(e.Name)), row, fmt.Sprintf(" 攻+%d", e.Atk), termbox.ColorYellow, termbox.ColorDefault)
+			} else {
+				drawText(sideX+4, row, fmt.Sprintf("%s", e.Name), termbox.ColorGreen, termbox.ColorDefault)
+				drawText(sideX+4+len([]rune(e.Name)), row, fmt.Sprintf(" 防+%d", e.Def), termbox.ColorGreen, termbox.ColorDefault)
+			}
+		} else {
+			drawText(sideX+4, row, "(空)", termbox.ColorDarkGray, termbox.ColorDefault)
+		}
+	}
+
 	msgY := MapH + 1
 	msg := g.Message
 	if time.Since(g.MsgTime) > 3*time.Second {
@@ -429,7 +556,7 @@ func (g *Game) Render() {
 	}
 
 	helpY := msgY + 1
-	help := "WASD移动 | $金币(攻击+1) | +血瓶(回复5HP) | E怪物 | >楼梯"
+	help := "WASD移动 | $金币 | +血瓶 | C宝箱 | E怪物 | >楼梯"
 	if g.Over {
 		help = "按Q退出游戏"
 	}
