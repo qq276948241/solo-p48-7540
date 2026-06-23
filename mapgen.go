@@ -3,6 +3,13 @@ package main
 import "math/rand"
 
 func (g *Game) GenerateLevel() {
+	saveHP := g.Player.HP
+	saveMaxHP := g.Player.MaxHP
+	saveBaseATK := g.Player.BaseATK
+	saveBaseDEF := g.Player.BaseDEF
+	saveGold := g.Player.Gold
+	saveInv := g.Player.Inv
+
 	g.Grid = make([][]Tile, MapH)
 	for y := range g.Grid {
 		g.Grid[y] = make([]Tile, MapW)
@@ -19,6 +26,13 @@ func (g *Game) GenerateLevel() {
 	startRoom := rooms[0]
 	g.Player.X = startRoom.X + startRoom.W/2
 	g.Player.Y = startRoom.Y + startRoom.H/2
+
+	g.Player.HP = saveHP
+	g.Player.MaxHP = saveMaxHP
+	g.Player.BaseATK = saveBaseATK
+	g.Player.BaseDEF = saveBaseDEF
+	g.Player.Gold = saveGold
+	g.Player.Inv = saveInv
 
 	floors := g.getFloors()
 	rand.Shuffle(len(floors), func(i, j int) { floors[i], floors[j] = floors[j], floors[i] })

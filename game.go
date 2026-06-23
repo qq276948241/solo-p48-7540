@@ -67,15 +67,15 @@ func (g *Game) Move(dx, dy int) {
 			removed := g.Player.AddEquip(eq)
 			if eq.Type == EWeapon {
 				if removed != nil {
-					g.SetMsg("宝箱开出[%s](ATK+%d) 替换[%s]", eq.Name, eq.Atk, removed.Name)
+					g.SetMsg("★宝箱开出[%s](ATK+%d) 背包已满! 丢弃[%s]装入新武器!", eq.Name, eq.Atk, removed.Name)
 				} else {
-					g.SetMsg("宝箱开出[%s](ATK+%d)", eq.Name, eq.Atk)
+					g.SetMsg("★宝箱开出武器[%s]! ATK+%d (总ATK:%d)", eq.Name, eq.Atk, g.Player.ATK())
 				}
 			} else {
 				if removed != nil {
-					g.SetMsg("宝箱开出[%s](DEF+%d) 替换[%s]", eq.Name, eq.Def, removed.Name)
+					g.SetMsg("★宝箱开出[%s](DEF+%d) 背包已满! 丢弃[%s]装入新护甲!", eq.Name, eq.Def, removed.Name)
 				} else {
-					g.SetMsg("宝箱开出[%s](DEF+%d)", eq.Name, eq.Def)
+					g.SetMsg("★宝箱开出护甲[%s]! DEF+%d (总DEF:%d)", eq.Name, eq.Def, g.Player.DEF())
 				}
 			}
 		case IStairs:
